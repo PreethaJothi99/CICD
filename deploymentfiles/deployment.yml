@@ -15,7 +15,29 @@ spec:
         app: mc-app
     spec:
       containers:
-      - name: mc-app
-        image: preethavanjothi21/cicd-webapp:1   # Jenkins will auto-replace this tag on each build
-        ports:
-        - containerPort: 8080
+        - name: mc-app
+          image: preethavanjothi21/cicd-webapp:0   # Jenkins will auto-update to :<BUILD_NUMBER>
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          # Optional probes (safe defaults). If your app has a health endpoint, update the path.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
