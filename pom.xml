@@ -11,10 +11,12 @@
   <properties>
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <docker.image.prefix>kammana</docker.image.prefix>
     <sonar.host.url>http://3.83.18.215:9000/</sonar.host.url>
   </properties>
 
+  <!-- keep your Nexus settings if you want; not required for this build -->
   <distributionManagement>
     <snapshotRepository>
       <id>NexusRepo</id>
@@ -27,7 +29,7 @@
   </distributionManagement>
 
   <dependencies>
-    <!-- Tomcat 9 uses javax.servlet 4.x provided by the container -->
+    <!-- Provided by Tomcat at runtime -->
     <dependency>
       <groupId>javax.servlet</groupId>
       <artifactId>javax.servlet-api</artifactId>
@@ -35,6 +37,43 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Optional: JUnit 5 so tests appear in Jenkins -->
+    <!-- Optional tests so Jenkins shows JUnit results -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- compile with Java 17 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.11.0</version>
+        <configuration>
+          <release>17</release>
+        </configuration>
+      </plugin>
+
+      <!-- package as WAR -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>3.3.2</version>
+        <configuration>
+          <failOnMissingWebXml>false</failOnMissingWebXml>
+        </configuration>
+      </plugin>
+
+      <!-- JUnit 5 runner -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
