@@ -6,29 +6,28 @@ pipeline {
   environment {
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
     SONAR_HOST   = 'http://98.83.151.73:9000'
-    DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'   // your Docker Hub repo
-    PROJECT_KEY  = 'preetha-cicd'                    // Sonar project key
-    // If Jenkins can't find mvn, uncomment one of these:
-    // PATH = "/usr/share/maven/bin:${PATH}"
-    // PATH = "/usr/bin:${PATH}"
+    DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'
+    PROJECT_KEY  = 'preetha-cicd'
   }
 
   stages {
 
     stage('Checkout') {
       steps {
+        echo "Cloning ${GIT_REPO}"
         git branch: 'main', url: "${GIT_REPO}"
-        sh 'which mvn && mvn -v'
+        sh 'ls -la'
       }
     }
 
     stage('Build & Unit Test') {
       steps {
-        sh 'mvn -B clean test package'
+        sh 'mvn -B clean verify -DskipTests=false'
       }
       post {
         always {
-          junit '**/target/surefire-reports/*.xml'
+          junit testResults: '**/target/surefire-reports/*.xml, **/target/failsafe-reports/*.xml', allowEmptyResults: true
+          archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true, onlyIfSuccessful: false
         }
       }
     }
@@ -42,13 +41,12 @@ pipeline {
               -Dsonar.token=${SONAR_TOKEN} \
               -Dsonar.projectKey=${PROJECT_KEY} \
               -Dsonar.projectName=${PROJECT_KEY} \
-              -Dsonar.java.binaries=target
+              -Dsonar.java.binaries=**/target/classes
           """
         }
       }
     }
 
-    // Quality Gate via polling (works even if you didn't configure Sonar server in Jenkins)
     stage('Quality Gate') {
       steps {
         withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
@@ -56,7 +54,7 @@ pipeline {
             set -e
             echo "Waiting for SonarQube Quality Gate..."
             for i in \$(seq 1 30); do
-              STATUS=\$(curl -s -u \${SONAR_TOKEN}: ${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
+              STATUS=\$(curl -s -u \${SONAR_TOKEN}: \${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
                 | sed -n 's/.*"status":"\\([^"]*\\)".*/\\1/p')
               echo "Current gate status: \${STATUS}"
               if [ "\${STATUS}" = "OK" ]; then exit 0; fi
@@ -69,35 +67,4 @@ pipeline {
       }
     }
 
-    stage('Build Docker Image') {
-      steps {
-        sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_NUMBER} ."
-      }
-    }
-
-    stage('Push to Docker Hub') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin'
-        }
-        sh "docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}"
-      }
-    }
-
-    stage('Update image tag in deployment YAML') {
-      steps {
-        withCredentials([string(credentialsId: 'githubtoken', variable: 'GH_TOKEN')]) {
-          sh """
-            set -e
-            git config user.email "ci-bot@example.com"
-            git config user.name  "ci-bot"
-            sed -i "s#^\\([[:space:]]*image:[[:space:]]*\\).*#\\1${DOCKER_IMAGE}:${BUILD_NUMBER}#g" deploymentfiles/deployment.yml
-            git add deploymentfiles/deployment.yml
-            git commit -m "CI: set image ${DOCKER_IMAGE}:${BUILD_NUMBER}" || echo "no changes"
-            git push https://${GH_TOKEN}@github.com/PreethaJothi99/CICD.git HEAD:main
-          """
-        }
-      }
-    }
-  }
-}
+    s
