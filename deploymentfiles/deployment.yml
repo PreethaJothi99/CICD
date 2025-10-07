@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: mc-app
-          image: preethavanjothi21/cicd-webapp:8
+          image: preethavanjothi21/cicd-webapp:16
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
