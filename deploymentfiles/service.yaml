@@ -4,10 +4,11 @@ metadata:
   name: mc-app-service
 spec:
   type: LoadBalancer
+  selector:
+    app: mc-app
   ports:
   - name: http
     port: 80
     targetPort: 8080
     protocol: TCP
-  selector:
-    app: mc-app
+
