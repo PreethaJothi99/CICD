@@ -1,23 +1,24 @@
 pipeline {
   agent any
   options { timestamps(); disableConcurrentBuilds() }
-  tools { maven 'maven3' }
   triggers { githubPush() }   // GitHub webhook triggers this pipeline
 
   environment {
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
     SONAR_HOST   = 'http://98.83.151.73:9000'
-    DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'    // your Docker Hub repo
-    PROJECT_KEY  = 'preetha-cicd'                     // Sonar project key/name
+    DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'   // your Docker Hub repo
+    PROJECT_KEY  = 'preetha-cicd'                    // Sonar project key
+    // If Jenkins can't find mvn, uncomment one of these:
+    // PATH = "/usr/share/maven/bin:${PATH}"
+    // PATH = "/usr/bin:${PATH}"
   }
 
   stages {
 
     stage('Checkout') {
       steps {
-        echo "Cloning ${GIT_REPO}"
         git branch: 'main', url: "${GIT_REPO}"
-        sh 'ls -la'
+        sh 'which mvn && mvn -v'
       }
     }
 
@@ -27,7 +28,6 @@ pipeline {
       }
       post {
         always {
-          // publish JUnit test results even if tests fail
           junit '**/target/surefire-reports/*.xml'
         }
       }
@@ -35,7 +35,6 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-        // Use your Sonar token stored in Jenkins credentials (ID: sonartoken)
         withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
           sh """
             mvn -B sonar:sonar \
@@ -49,8 +48,7 @@ pipeline {
       }
     }
 
-    // Quality Gate via polling (works without configuring a Sonar server in Jenkins).
-    // If you add the Sonar->Jenkins webhook later, you can replace this with waitForQualityGate.
+    // Quality Gate via polling (works even if you didn't configure Sonar server in Jenkins)
     stage('Quality Gate') {
       steps {
         withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
@@ -58,7 +56,7 @@ pipeline {
             set -e
             echo "Waiting for SonarQube Quality Gate..."
             for i in \$(seq 1 30); do
-              STATUS=\$(curl -s -u \${SONAR_TOKEN}: \${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
+              STATUS=\$(curl -s -u \${SONAR_TOKEN}: ${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
                 | sed -n 's/.*"status":"\\([^"]*\\)".*/\\1/p')
               echo "Current gate status: \${STATUS}"
               if [ "\${STATUS}" = "OK" ]; then exit 0; fi
@@ -93,10 +91,7 @@ pipeline {
             set -e
             git config user.email "ci-bot@example.com"
             git config user.name  "ci-bot"
-
-            # Replace the image: line in your manifest
             sed -i "s#^\\([[:space:]]*image:[[:space:]]*\\).*#\\1${DOCKER_IMAGE}:${BUILD_NUMBER}#g" deploymentfiles/deployment.yml
-
             git add deploymentfiles/deployment.yml
             git commit -m "CI: set image ${DOCKER_IMAGE}:${BUILD_NUMBER}" || echo "no changes"
             git push https://${GH_TOKEN}@github.com/PreethaJothi99/CICD.git HEAD:main
