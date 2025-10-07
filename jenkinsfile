@@ -1,7 +1,7 @@
 pipeline {
   agent any
   options { timestamps(); disableConcurrentBuilds() }
-  triggers { githubPush() }
+  triggers { githubPush() }   // GitHub webhook triggers
 
   environment {
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
@@ -11,27 +11,25 @@ pipeline {
   }
 
   stages {
-
     stage('Checkout') {
       steps {
-        echo "Cloning ${GIT_REPO}"
         git branch: 'main', url: "${GIT_REPO}"
-        sh 'ls -la'
+        sh 'which mvn && mvn -v'
       }
     }
 
     stage('Build & Unit Test') {
       steps {
-        // run tests (if any) and create reports; do NOT skip tests
-        sh 'mvn -B clean verify -DskipTests=false'
-        // optional: show if any reports were produced
-        sh 'find . -type f -path "*/target/surefire-reports/*.xml" -o -path "*/target/failsafe-reports/*.xml" || true'
+        // Build a WAR (webapp) and run tests
+        sh 'mvn -B clean package -DskipTests=false'
+        sh 'ls -la target || true'
       }
       post {
         always {
-          // DO NOT fail if there are no XMLs
-          junit testResults: '**/target/surefire-reports/*.xml, **/target/failsafe-reports/*.xml', allowEmptyResults: true
-          archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true, onlyIfSuccessful: false
+          // publish tests if present; don't fail if none
+          junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
+          // archive WAR (NOT jar); don't fail if missing
+          archiveArtifacts artifacts: 'target/*.war', fingerprint: true, allowEmptyArchive: true
         }
       }
     }
@@ -45,12 +43,13 @@ pipeline {
               -Dsonar.token=${SONAR_TOKEN} \
               -Dsonar.projectKey=${PROJECT_KEY} \
               -Dsonar.projectName=${PROJECT_KEY} \
-              -Dsonar.java.binaries=**/target/classes
+              -Dsonar.java.binaries=target
           """
         }
       }
     }
 
+    // Polling quality gate (works without Jenkins Sonar server config)
     stage('Quality Gate') {
       steps {
         withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
