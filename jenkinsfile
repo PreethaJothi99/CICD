@@ -1,21 +1,25 @@
 pipeline {
   agent any
-  options { timestamps(); disableConcurrentBuilds() }
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+  }
   triggers { githubPush() }
 
   environment {
-    PATH = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
+    PATH         = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
-    SONAR_HOST   = 'http://3.95.253.178:9000'
+    SONAR_HOST   = 'http://3.95.253.178:9000'   // change to Elastic IP/DNS later
     DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'
     PROJECT_KEY  = 'preetha-cicd'
   }
 
   stages {
+
     stage('Checkout') {
       steps {
         git branch: 'main', url: "${GIT_REPO}"
-        sh 'echo PATH=$PATH; which mvn; mvn -v'
+        sh 'echo PATH=$PATH; which mvn || true; mvn -v'
       }
     }
 
@@ -34,34 +38,34 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-        withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
-          sh """
-            mvn -B sonar:sonar \
+        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+          sh '''
+            mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
               -Dsonar.host.url=${SONAR_HOST} \
-              -Dsonar.token=${SONAR_TOKEN} \
+              -Dsonar.token=$SONAR_TOKEN \
               -Dsonar.projectKey=${PROJECT_KEY} \
               -Dsonar.projectName=${PROJECT_KEY} \
               -Dsonar.java.binaries=target
-          """
+          '''
         }
       }
     }
 
     stage('Quality Gate (poll)') {
       steps {
-        withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
-          sh """
+        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+          sh '''
             set -e
-            for i in \$(seq 1 30); do
-              STATUS=\$(curl -s -u \${SONAR_TOKEN}: ${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
+            for i in $(seq 1 30); do
+              STATUS=$(curl -s -u "$SONAR_TOKEN:" "${SONAR_HOST}/api/qualitygates/project_status?projectKey=${PROJECT_KEY}" \
                 | sed -n 's/.*"status":"\\([^"]*\\)".*/\\1/p')
-              echo "Quality Gate: \${STATUS}"
-              [ "\${STATUS}" = "OK" ] && exit 0
-              [ "\${STATUS}" = "ERROR" ] && echo "Quality Gate FAILED" && exit 1
+              echo "Quality Gate: ${STATUS}"
+              [ "${STATUS}" = "OK" ] && exit 0
+              [ "${STATUS}" = "ERROR" ] && echo "Quality Gate FAILED" && exit 1
               sleep 5
             done
             echo "Timed out waiting for Quality Gate"; exit 1
-          """
+          '''
         }
       }
     }
@@ -77,7 +81,12 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin'
         }
-        sh "docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}"
+        sh "docker push ${DOCKER_IMAGE}:${env.BUILD_NUMBER}"
+      }
+      post {
+        always {
+          sh 'docker logout || true'
+        }
       }
     }
 
@@ -88,13 +97,23 @@ pipeline {
             set -e
             git config user.email "ci-bot@example.com"
             git config user.name  "ci-bot"
-            sed -i "s#^\\([[:space:]]*image:[[:space:]]*\\).*#\\1${DOCKER_IMAGE}:${BUILD_NUMBER}#g" deploymentfiles/deployment.yml
+            sed -i 's#^\\([[:space:]]*image:[[:space:]]*\\).*#\\1${DOCKER_IMAGE}:${BUILD_NUMBER}#g' deploymentfiles/deployment.yml
             git add deploymentfiles/deployment.yml
             git commit -m "CI: set image ${DOCKER_IMAGE}:${BUILD_NUMBER}" || echo "no changes"
             git push https://${GH_TOKEN}@github.com/PreethaJothi99/CICD.git HEAD:main
           """
         }
       }
+    }
+
+  } // stages
+
+  post {
+    failure {
+      echo 'Pipeline failed. Check the failed stage logs above.'
+    }
+    success {
+      echo "Pipeline succeeded. Image: ${DOCKER_IMAGE}:${env.BUILD_NUMBER}"
     }
   }
 }
