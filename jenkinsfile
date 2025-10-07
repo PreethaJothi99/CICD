@@ -9,7 +9,7 @@ pipeline {
   environment {
     PATH         = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
-    SONAR_HOST   = 'http://3.95.253.178:9000'   // change to Elastic IP/DNS later
+    SONAR_HOST   = 'http://3.95.253.178:9000'   // switch to Elastic IP/DNS later
     DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'
     PROJECT_KEY  = 'preetha-cicd'
   }
@@ -38,7 +38,7 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+        withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
           sh '''
             mvn -B org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
               -Dsonar.host.url=${SONAR_HOST} \
@@ -53,7 +53,7 @@ pipeline {
 
     stage('Quality Gate (poll)') {
       steps {
-        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+        withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
           sh '''
             set -e
             for i in $(seq 1 30); do
@@ -109,11 +109,7 @@ pipeline {
   } // stages
 
   post {
-    failure {
-      echo 'Pipeline failed. Check the failed stage logs above.'
-    }
-    success {
-      echo "Pipeline succeeded. Image: ${DOCKER_IMAGE}:${env.BUILD_NUMBER}"
-    }
+    failure { echo 'Pipeline failed. Check the failed stage logs above.' }
+    success { echo "Pipeline succeeded. Image: ${DOCKER_IMAGE}:${env.BUILD_NUMBER}" }
   }
 }
