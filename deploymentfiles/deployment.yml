@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: mc-app
-          image: preethavanjothi21/cicd-webapp:0   # Jenkins will auto-update to :<BUILD_NUMBER>
+          image: preethavanjothi21/cicd-webapp:8
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
