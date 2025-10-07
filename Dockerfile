@@ -1,13 +1,7 @@
-##artifact build stage
-FROM maven AS buildstage
-RUN mkdir /opt/cicd
-WORKDIR /opt/cicd
-COPY . .
-RUN mvn clean install    ## artifact -- .war
-
-### tomcat deploy stage
-FROM tomcat
-WORKDIR webapps
-COPY --from=buildstage /opt/cicd/target/*.war .
-RUN rm -rf ROOT && mv *.war ROOT.war
+# Dockerfile
+FROM tomcat:9.0-jdk17-temurin
+RUN rm -rf /usr/local/tomcat/webapps/*
+# Use the WAR that Maven builds in Jenkins
+COPY target/*.war /usr/local/tomcat/webapps/ROOT.war
 EXPOSE 8080
+CMD ["catalina.sh", "run"]
