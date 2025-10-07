@@ -1,26 +1,71 @@
 pipeline {
-    agent any
+  agent any
 
-    stages {
-        stage('CLONE SCM') {
-            steps {
-                echo 'Cloning Mc-app project code'
-				git branch: 'main', url: 'https://github.com/devopstraininghub/mindcircuit13.git'
-            }
-        }
-		
-		stage('Build Artifact ') {
-            steps {
-                echo 'generating artifact with maven build tool'
-				sh 'mvn clean install'
-            }
-        }
-		
-		stage('Deploy to tomcat') {
-            steps {
-                echo 'Deploying artifact to tomcat webserver '
-				deploy adapters: [tomcat9(credentialsId: 'tomcat', path: '', url: 'http://52.201.234.58:8091/')], contextPath: 'facebook-app', war: '**/*.war'
-            }
-        }
+  tools { maven 'maven3' }
+
+  environment {
+    // Update these with your setup:
+    DOCKER_IMAGE   = 'preethavanjothi21/cicd-webapp'   // your Docker Hub repo
+    GITOPS_REPO    = 'PreethaJothi99/CICD'           // the repo that has deploymentfiles/
+    SONARQUBE_ENV  = 'SonarQubeServer'               // Jenkins Sonar server name
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        echo 'Cloning repo'
+        checkout scm
+        sh 'ls -la'
+      }
     }
-}
+
+    stage('Unit Build & Test') {
+      steps {
+        sh 'mvn -V -B clean package'
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv("${SONARQUBE_ENV}") {
+          sh 'mvn -B sonar:sonar'
+        }
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        script {
+          sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_NUMBER} ."
+        }
+      }
+    }
+
+    stage('Push to Docker Hub') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin'
+          sh "docker push ${DOCKER_IMAGE}:${env.BUILD_NUMBER}"
+        }
+      }
+    }
+
+    stage('Bump image tag in k8s manifest (GitOps repo)') {
+      steps {
+        withCredentials([string(credentialsId: 'github-pat', variable: 'GHTOKEN')]) {
+          sh '''
+            set -e
+            rm -rf gitops && mkdir gitops
+            cd gitops
+            git clone https://${GHTOKEN}:x-oauth-basic@github.com/'${GITOPS_REPO}'.git
+            cd $(basename '${GITOPS_REPO}')
+            
+            # Configure Git user locally (per repo)
+            git config user.email "ci-bot@example.com"
+            git config user.name  "ci-bot"
+
+            # Update image in deployment.yml
+            sed -i "s#image: .*#image: ${DOCKER_IMAGE}:${BUILD_NUMBER}#g" deploymentfiles/deployment.yml
+
+            git add deploymentfiles/deployment.yml
+            git commit -m "CI: set image ${DOCKER_IMAGE}:${B_
