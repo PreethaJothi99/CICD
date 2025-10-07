@@ -1,9 +1,10 @@
 pipeline {
   agent any
   options { timestamps(); disableConcurrentBuilds() }
-  triggers { githubPush() }   // GitHub webhook triggers
+  triggers { githubPush() }
 
   environment {
+    PATH = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
     SONAR_HOST   = 'http://98.83.151.73:9000'
     DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'
@@ -14,21 +15,18 @@ pipeline {
     stage('Checkout') {
       steps {
         git branch: 'main', url: "${GIT_REPO}"
-        sh 'which mvn && mvn -v'
+        sh 'echo PATH=$PATH; which mvn; mvn -v'
       }
     }
 
     stage('Build & Unit Test') {
       steps {
-        // Build a WAR (webapp) and run tests
-        sh 'mvn -B clean package -DskipTests=false'
+        sh 'mvn -B clean install -DskipTests=false'
         sh 'ls -la target || true'
       }
       post {
         always {
-          // publish tests if present; don't fail if none
           junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
-          // archive WAR (NOT jar); don't fail if missing
           archiveArtifacts artifacts: 'target/*.war', fingerprint: true, allowEmptyArchive: true
         }
       }
@@ -49,19 +47,17 @@ pipeline {
       }
     }
 
-    // Polling quality gate (works without Jenkins Sonar server config)
-    stage('Quality Gate') {
+    stage('Quality Gate (poll)') {
       steps {
         withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
           sh """
             set -e
-            echo "Waiting for SonarQube Quality Gate..."
             for i in \$(seq 1 30); do
               STATUS=\$(curl -s -u \${SONAR_TOKEN}: ${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
                 | sed -n 's/.*"status":"\\([^"]*\\)".*/\\1/p')
-              echo "Current gate status: \${STATUS}"
-              if [ "\${STATUS}" = "OK" ]; then exit 0; fi
-              if [ "\${STATUS}" = "ERROR" ]; then echo "Quality Gate FAILED"; exit 1; fi
+              echo "Quality Gate: \${STATUS}"
+              [ "\${STATUS}" = "OK" ] && exit 0
+              [ "\${STATUS}" = "ERROR" ] && echo "Quality Gate FAILED" && exit 1
               sleep 5
             done
             echo "Timed out waiting for Quality Gate"; exit 1
