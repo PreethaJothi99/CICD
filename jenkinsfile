@@ -1,7 +1,7 @@
 pipeline {
   agent any
   options { timestamps(); disableConcurrentBuilds() }
-  triggers { githubPush() }   // GitHub webhook triggers this pipeline
+  triggers { githubPush() }
 
   environment {
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
@@ -22,10 +22,14 @@ pipeline {
 
     stage('Build & Unit Test') {
       steps {
+        // run tests (if any) and create reports; do NOT skip tests
         sh 'mvn -B clean verify -DskipTests=false'
+        // optional: show if any reports were produced
+        sh 'find . -type f -path "*/target/surefire-reports/*.xml" -o -path "*/target/failsafe-reports/*.xml" || true'
       }
       post {
         always {
+          // DO NOT fail if there are no XMLs
           junit testResults: '**/target/surefire-reports/*.xml, **/target/failsafe-reports/*.xml', allowEmptyResults: true
           archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true, onlyIfSuccessful: false
         }
@@ -54,7 +58,7 @@ pipeline {
             set -e
             echo "Waiting for SonarQube Quality Gate..."
             for i in \$(seq 1 30); do
-              STATUS=\$(curl -s -u \${SONAR_TOKEN}: \${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
+              STATUS=\$(curl -s -u \${SONAR_TOKEN}: ${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
                 | sed -n 's/.*"status":"\\([^"]*\\)".*/\\1/p')
               echo "Current gate status: \${STATUS}"
               if [ "\${STATUS}" = "OK" ]; then exit 0; fi
@@ -67,4 +71,35 @@ pipeline {
       }
     }
 
-    s
+    stage('Build Docker Image') {
+      steps {
+        sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_NUMBER} ."
+      }
+    }
+
+    stage('Push to Docker Hub') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin'
+        }
+        sh "docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}"
+      }
+    }
+
+    stage('Update image tag in deployment YAML') {
+      steps {
+        withCredentials([string(credentialsId: 'githubtoken', variable: 'GH_TOKEN')]) {
+          sh """
+            set -e
+            git config user.email "ci-bot@example.com"
+            git config user.name  "ci-bot"
+            sed -i "s#^\\([[:space:]]*image:[[:space:]]*\\).*#\\1${DOCKER_IMAGE}:${BUILD_NUMBER}#g" deploymentfiles/deployment.yml
+            git add deploymentfiles/deployment.yml
+            git commit -m "CI: set image ${DOCKER_IMAGE}:${BUILD_NUMBER}" || echo "no changes"
+            git push https://${GH_TOKEN}@github.com/PreethaJothi99/CICD.git HEAD:main
+          """
+        }
+      }
+    }
+  }
+}
