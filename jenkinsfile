@@ -1,71 +1,108 @@
 pipeline {
   agent any
-
+  options { timestamps(); disableConcurrentBuilds() }
   tools { maven 'maven3' }
+  triggers { githubPush() }   // GitHub webhook triggers this pipeline
 
   environment {
-    // Update these with your setup:
-    DOCKER_IMAGE   = 'preethavanjothi21/cicd-webapp'   // your Docker Hub repo
-    GITOPS_REPO    = 'PreethaJothi99/CICD'           // the repo that has deploymentfiles/
-    SONARQUBE_ENV  = 'SonarQubeServer'               // Jenkins Sonar server name
+    GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
+    SONAR_HOST   = 'http://98.83.151.73:9000'
+    DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'    // your Docker Hub repo
+    PROJECT_KEY  = 'preetha-cicd'                     // Sonar project key/name
   }
 
   stages {
+
     stage('Checkout') {
       steps {
-        echo 'Cloning repo'
-        checkout scm
+        echo "Cloning ${GIT_REPO}"
+        git branch: 'main', url: "${GIT_REPO}"
         sh 'ls -la'
       }
     }
 
-    stage('Unit Build & Test') {
+    stage('Build & Unit Test') {
       steps {
-        sh 'mvn -V -B clean package'
+        sh 'mvn -B clean test package'
+      }
+      post {
+        always {
+          // publish JUnit test results even if tests fail
+          junit '**/target/surefire-reports/*.xml'
+        }
       }
     }
 
     stage('SonarQube Analysis') {
       steps {
-        withSonarQubeEnv("${SONARQUBE_ENV}") {
-          sh 'mvn -B sonar:sonar'
+        // Use your Sonar token stored in Jenkins credentials (ID: sonartoken)
+        withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
+          sh """
+            mvn -B sonar:sonar \
+              -Dsonar.host.url=${SONAR_HOST} \
+              -Dsonar.token=${SONAR_TOKEN} \
+              -Dsonar.projectKey=${PROJECT_KEY} \
+              -Dsonar.projectName=${PROJECT_KEY} \
+              -Dsonar.java.binaries=target
+          """
+        }
+      }
+    }
+
+    // Quality Gate via polling (works without configuring a Sonar server in Jenkins).
+    // If you add the Sonar->Jenkins webhook later, you can replace this with waitForQualityGate.
+    stage('Quality Gate') {
+      steps {
+        withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
+          sh """
+            set -e
+            echo "Waiting for SonarQube Quality Gate..."
+            for i in \$(seq 1 30); do
+              STATUS=\$(curl -s -u \${SONAR_TOKEN}: \${SONAR_HOST}/api/qualitygates/project_status?projectKey='${PROJECT_KEY}' \
+                | sed -n 's/.*"status":"\\([^"]*\\)".*/\\1/p')
+              echo "Current gate status: \${STATUS}"
+              if [ "\${STATUS}" = "OK" ]; then exit 0; fi
+              if [ "\${STATUS}" = "ERROR" ]; then echo "Quality Gate FAILED"; exit 1; fi
+              sleep 5
+            done
+            echo "Timed out waiting for Quality Gate"; exit 1
+          """
         }
       }
     }
 
     stage('Build Docker Image') {
       steps {
-        script {
-          sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_NUMBER} ."
-        }
+        sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_NUMBER} ."
       }
     }
 
     stage('Push to Docker Hub') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin'
-          sh "docker push ${DOCKER_IMAGE}:${env.BUILD_NUMBER}"
         }
+        sh "docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}"
       }
     }
 
-    stage('Bump image tag in k8s manifest (GitOps repo)') {
+    stage('Update image tag in deployment YAML') {
       steps {
-        withCredentials([string(credentialsId: 'github-pat', variable: 'GHTOKEN')]) {
-          sh '''
+        withCredentials([string(credentialsId: 'githubtoken', variable: 'GH_TOKEN')]) {
+          sh """
             set -e
-            rm -rf gitops && mkdir gitops
-            cd gitops
-            git clone https://${GHTOKEN}:x-oauth-basic@github.com/'${GITOPS_REPO}'.git
-            cd $(basename '${GITOPS_REPO}')
-            
-            # Configure Git user locally (per repo)
             git config user.email "ci-bot@example.com"
             git config user.name  "ci-bot"
 
-            # Update image in deployment.yml
-            sed -i "s#image: .*#image: ${DOCKER_IMAGE}:${BUILD_NUMBER}#g" deploymentfiles/deployment.yml
+            # Replace the image: line in your manifest
+            sed -i "s#^\\([[:space:]]*image:[[:space:]]*\\).*#\\1${DOCKER_IMAGE}:${BUILD_NUMBER}#g" deploymentfiles/deployment.yml
 
             git add deploymentfiles/deployment.yml
-            git commit -m "CI: set image ${DOCKER_IMAGE}:${B_
+            git commit -m "CI: set image ${DOCKER_IMAGE}:${BUILD_NUMBER}" || echo "no changes"
+            git push https://${GH_TOKEN}@github.com/PreethaJothi99/CICD.git HEAD:main
+          """
+        }
+      }
+    }
+  }
+}
