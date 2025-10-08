@@ -11,8 +11,7 @@ pipeline {
     PROJECT_KEY     = 'preetha-cicd'
     IMAGE_TAG       = "${env.BUILD_NUMBER}"
     TRIVY_CACHE_DIR = "${WORKSPACE}/.trivycache"
-    // On your server, trivy is at /usr/bin/trivy (confirmed)
-    TRIVY_BIN       = "/usr/bin/trivy"
+    TRIVY_BIN       = "/usr/bin/trivy"   // confirmed on your host
   }
 
   stages {
@@ -101,6 +100,7 @@ pipeline {
       post { always { archiveArtifacts artifacts: 'reports/trivy-fs.txt', allowEmptyArchive: true } }
     }
 
+    // NOTE: trivy config (v0.55.0) does NOT support --no-progress. Removed that flag here.
     stage('Trivy K8s Config (manifests)') {
       steps {
         sh '''
@@ -111,7 +111,6 @@ pipeline {
           "${TRIVY}" config \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
-            --no-progress \
             --cache-dir "${TRIVY_CACHE_DIR}" \
             --format table \
             --output reports/trivy-k8s-config.txt \
@@ -175,7 +174,7 @@ pipeline {
   } // stages
 
   post {
-    failure { echo '❌ Pipeline failed. Check the Trivy reports under "reports/".' }
+    failure { echo '❌ Pipeline failed. See Trivy report artifacts under "reports/".' }
     success { echo "✅ Pipeline succeeded! Image: ${DOCKER_IMAGE}:${IMAGE_TAG}" }
   }
 }
