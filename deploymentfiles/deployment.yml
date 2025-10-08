@@ -1,43 +1,31 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: mc-app
-  labels:
-    app: mc-app
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: mc-app
-  template:
-    metadata:
-      labels:
-        app: mc-app
-    spec:
-      containers:
-        - name: mc-app
-          image: preethavanjothi21/cicd-webapp:16
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 8080
-          # Optional probes (safe defaults). If your app has a health endpoint, update the path.
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 8080
-            initialDelaySeconds: 30
-            periodSeconds: 15
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
+cat > eksctl-mcappcluster.yaml <<'YAML'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
 
+metadata:
+  name: mcappcluster
+  region: us-east-1
+  version: "1.30"
+
+iam:
+  withOIDC: true
+
+vpc:
+  nat:
+    gateway: Single
+
+managedNodeGroups:
+  - name: sys-micro
+    instanceType: t3.micro
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 4
+    labels: { role: system }
+
+  - name: app-medium
+    instanceType: t3.medium
+    desiredCapacity: 3
+    minSize: 2
+    maxSize: 6
+    labels: { role: app }
+YAML
