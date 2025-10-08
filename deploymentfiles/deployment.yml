@@ -18,7 +18,7 @@ spec:
         role: app
       containers:
         - name: webapp
-          image: preethavanjothi21/cicd-webapp:latest
+          image: preethavanjothi21/cicd-webapp:18
           ports:
             - name: http
               containerPort: 8080
