@@ -9,7 +9,7 @@ pipeline {
   environment {
     PATH         = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
-    SONAR_HOST   = 'http://3.95.253.178:9000'   // switch to Elastic IP/DNS later
+    SONAR_HOST   = 'http://52.55.130.195:9000'   // switch to Elastic IP/DNS later
     DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'
     PROJECT_KEY  = 'preetha-cicd'
   }
