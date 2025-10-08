@@ -4,13 +4,16 @@ pipeline {
   triggers { githubPush() }
 
   environment {
-    PATH            = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"   // no /snap/bin
+    // Ensure Jenkins uses system binaries (not Snap)
+    PATH            = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
     GIT_REPO        = 'https://github.com/PreethaJothi99/CICD.git'
     SONAR_HOST      = 'http://52.55.130.195:9000'
     DOCKER_IMAGE    = 'preethavanjothi21/cicd-webapp'
     PROJECT_KEY     = 'preetha-cicd'
     IMAGE_TAG       = "${env.BUILD_NUMBER}"
     TRIVY_CACHE_DIR = "${WORKSPACE}/.trivycache"
+    // Set this to the absolute path of your non-snap Trivy binary
+    TRIVY_BIN       = "/usr/local/bin/trivy"
   }
 
   stages {
@@ -22,6 +25,7 @@ pipeline {
           echo "PATH=$PATH"
           which mvn || true
           which trivy || true
+          ls -l "${TRIVY_BIN}" || true
           mvn -v
           mkdir -p "${TRIVY_CACHE_DIR}" reports
         '''
@@ -81,7 +85,7 @@ pipeline {
       steps {
         sh '''
           mkdir -p "${TRIVY_CACHE_DIR}" reports
-          trivy fs \
+          "${TRIVY_BIN}" fs \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
@@ -98,7 +102,7 @@ pipeline {
       steps {
         sh '''
           mkdir -p "${TRIVY_CACHE_DIR}" reports
-          trivy config \
+          "${TRIVY_BIN}" config \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
@@ -121,7 +125,7 @@ pipeline {
       steps {
         sh '''
           mkdir -p "${TRIVY_CACHE_DIR}" reports
-          trivy image \
+          "${TRIVY_BIN}" image \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
