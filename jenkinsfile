@@ -4,13 +4,13 @@ pipeline {
   triggers { githubPush() }
 
   environment {
-    // add /snap/bin so Jenkins can find trivy
-    PATH         = "/snap/bin:/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
-    GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
-    SONAR_HOST   = 'http://52.55.130.195:9000'
-    DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'
-    PROJECT_KEY  = 'preetha-cicd'
-    IMAGE_TAG    = "${env.BUILD_NUMBER}"
+    PATH            = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"   // no /snap/bin
+    GIT_REPO        = 'https://github.com/PreethaJothi99/CICD.git'
+    SONAR_HOST      = 'http://52.55.130.195:9000'
+    DOCKER_IMAGE    = 'preethavanjothi21/cicd-webapp'
+    PROJECT_KEY     = 'preetha-cicd'
+    IMAGE_TAG       = "${env.BUILD_NUMBER}"
+    TRIVY_CACHE_DIR = "${WORKSPACE}/.trivycache"
   }
 
   stages {
@@ -18,7 +18,13 @@ pipeline {
     stage('Checkout') {
       steps {
         git branch: 'main', url: "${GIT_REPO}"
-        sh 'echo PATH=$PATH; which mvn || true; which trivy || true; mvn -v'
+        sh '''
+          echo "PATH=$PATH"
+          which mvn || true
+          which trivy || true
+          mvn -v
+          mkdir -p "${TRIVY_CACHE_DIR}" reports
+        '''
       }
     }
 
@@ -69,19 +75,17 @@ pipeline {
       }
     }
 
-    /* =======================
-       Trivy security gates
-       ======================= */
+    /* ===== Trivy security gates ===== */
 
-    // Scan source code + Dockerfile + k8s yamls
     stage('Trivy FS (source)') {
       steps {
         sh '''
-          mkdir -p reports
+          mkdir -p "${TRIVY_CACHE_DIR}" reports
           trivy fs \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
+            --cache-dir "${TRIVY_CACHE_DIR}" \
             --format table \
             --output reports/trivy-fs.txt \
             .
@@ -90,14 +94,15 @@ pipeline {
       post { always { archiveArtifacts artifacts: 'reports/trivy-fs.txt', allowEmptyArchive: true } }
     }
 
-    // Optional: scan Kubernetes manifests for misconfig
     stage('Trivy K8s Config (manifests)') {
       steps {
         sh '''
+          mkdir -p "${TRIVY_CACHE_DIR}" reports
           trivy config \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
+            --cache-dir "${TRIVY_CACHE_DIR}" \
             --format table \
             --output reports/trivy-k8s-config.txt \
             deploymentfiles/
@@ -112,14 +117,15 @@ pipeline {
       }
     }
 
-    // Scan the built image BEFORE pushing
     stage('Trivy Image (container)') {
       steps {
         sh '''
+          mkdir -p "${TRIVY_CACHE_DIR}" reports
           trivy image \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
+            --cache-dir "${TRIVY_CACHE_DIR}" \
             --format table \
             --output reports/trivy-image.txt \
             ${DOCKER_IMAGE}:${IMAGE_TAG}
@@ -156,7 +162,7 @@ pipeline {
   } // stages
 
   post {
-    failure { echo 'Pipeline failed. Check stage logs (Trivy will fail on HIGH/CRITICAL).' }
+    failure { echo 'Pipeline failed. See Trivy report artifacts under "reports/".' }
     success { echo "Pipeline OK. Image: ${DOCKER_IMAGE}:${IMAGE_TAG}" }
   }
 }
