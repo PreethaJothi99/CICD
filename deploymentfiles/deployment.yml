@@ -18,7 +18,7 @@ spec:
         eks.amazonaws.com/nodegroup: app-large
       containers:
         - name: webapp
-          image: preethavanjothi21/cicd-webapp:18
+          image: preethavanjothi21/cicd-webapp:25
           imagePullPolicy: Always
           ports:
             - name: http
