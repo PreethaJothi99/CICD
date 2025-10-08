@@ -1,17 +1,16 @@
 pipeline {
   agent any
-  options {
-    timestamps()
-    disableConcurrentBuilds()
-  }
+  options { timestamps(); disableConcurrentBuilds() }
   triggers { githubPush() }
 
   environment {
-    PATH         = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
+    // add /snap/bin so Jenkins can find trivy
+    PATH         = "/snap/bin:/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
     GIT_REPO     = 'https://github.com/PreethaJothi99/CICD.git'
-    SONAR_HOST   = 'http://52.55.130.195:9000'   // switch to Elastic IP/DNS later
+    SONAR_HOST   = 'http://52.55.130.195:9000'
     DOCKER_IMAGE = 'preethavanjothi21/cicd-webapp'
     PROJECT_KEY  = 'preetha-cicd'
+    IMAGE_TAG    = "${env.BUILD_NUMBER}"
   }
 
   stages {
@@ -19,7 +18,7 @@ pipeline {
     stage('Checkout') {
       steps {
         git branch: 'main', url: "${GIT_REPO}"
-        sh 'echo PATH=$PATH; which mvn || true; mvn -v'
+        sh 'echo PATH=$PATH; which mvn || true; which trivy || true; mvn -v'
       }
     }
 
@@ -70,10 +69,63 @@ pipeline {
       }
     }
 
+    /* =======================
+       Trivy security gates
+       ======================= */
+
+    // Scan source code + Dockerfile + k8s yamls
+    stage('Trivy FS (source)') {
+      steps {
+        sh '''
+          mkdir -p reports
+          trivy fs \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --no-progress \
+            --format table \
+            --output reports/trivy-fs.txt \
+            .
+        '''
+      }
+      post { always { archiveArtifacts artifacts: 'reports/trivy-fs.txt', allowEmptyArchive: true } }
+    }
+
+    // Optional: scan Kubernetes manifests for misconfig
+    stage('Trivy K8s Config (manifests)') {
+      steps {
+        sh '''
+          trivy config \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --no-progress \
+            --format table \
+            --output reports/trivy-k8s-config.txt \
+            deploymentfiles/
+        '''
+      }
+      post { always { archiveArtifacts artifacts: 'reports/trivy-k8s-config.txt', allowEmptyArchive: true } }
+    }
+
     stage('Build Docker Image') {
       steps {
-        sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_NUMBER} ."
+        sh "docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} ."
       }
+    }
+
+    // Scan the built image BEFORE pushing
+    stage('Trivy Image (container)') {
+      steps {
+        sh '''
+          trivy image \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --no-progress \
+            --format table \
+            --output reports/trivy-image.txt \
+            ${DOCKER_IMAGE}:${IMAGE_TAG}
+        '''
+      }
+      post { always { archiveArtifacts artifacts: 'reports/trivy-image.txt', allowEmptyArchive: true } }
     }
 
     stage('Push to Docker Hub') {
@@ -81,13 +133,9 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin'
         }
-        sh "docker push ${DOCKER_IMAGE}:${env.BUILD_NUMBER}"
+        sh "docker push ${DOCKER_IMAGE}:${IMAGE_TAG}"
       }
-      post {
-        always {
-          sh 'docker logout || true'
-        }
-      }
+      post { always { sh 'docker logout || true' } }
     }
 
     stage('Update image tag in deployment YAML') {
@@ -97,19 +145,18 @@ pipeline {
             set -e
             git config user.email "ci-bot@example.com"
             git config user.name  "ci-bot"
-            sed -i 's#^\\([[:space:]]*image:[[:space:]]*\\).*#\\1${DOCKER_IMAGE}:${BUILD_NUMBER}#g' deploymentfiles/deployment.yml
+            sed -i 's#^\\([[:space:]]*image:[[:space:]]*\\).*#\\1${DOCKER_IMAGE}:${IMAGE_TAG}#g' deploymentfiles/deployment.yml
             git add deploymentfiles/deployment.yml
-            git commit -m "CI: set image ${DOCKER_IMAGE}:${BUILD_NUMBER}" || echo "no changes"
+            git commit -m "CI: set image ${DOCKER_IMAGE}:${IMAGE_TAG}" || echo "no changes"
             git push https://${GH_TOKEN}@github.com/PreethaJothi99/CICD.git HEAD:main
           """
         }
       }
     }
-
   } // stages
 
   post {
-    failure { echo 'Pipeline failed. Check the failed stage logs above.' }
-    success { echo "Pipeline succeeded. Image: ${DOCKER_IMAGE}:${env.BUILD_NUMBER}" }
+    failure { echo 'Pipeline failed. Check stage logs (Trivy will fail on HIGH/CRITICAL).' }
+    success { echo "Pipeline OK. Image: ${DOCKER_IMAGE}:${IMAGE_TAG}" }
   }
 }
