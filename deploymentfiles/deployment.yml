@@ -1,31 +1,47 @@
-cat > eksctl-mcappcluster.yaml <<'YAML'
-apiVersion: eksctl.io/v1alpha5
-kind: ClusterConfig
-
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: mcappcluster
-  region: us-east-1
-  version: "1.30"
-
-iam:
-  withOIDC: true
-
-vpc:
-  nat:
-    gateway: Single
-
-managedNodeGroups:
-  - name: sys-micro
-    instanceType: t3.micro
-    desiredCapacity: 2
-    minSize: 2
-    maxSize: 4
-    labels: { role: system }
-
-  - name: app-medium
-    instanceType: t3.medium
-    desiredCapacity: 3
-    minSize: 2
-    maxSize: 6
-    labels: { role: app }
-YAML
+  name: webapp
+  namespace: apps
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      # Schedule on your app nodegroup (labeled role=app)
+      nodeSelector:
+        role: app
+      containers:
+        - name: webapp
+          image: preethavanjothi21/cicd-webapp:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
