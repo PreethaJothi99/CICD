@@ -1,5 +1,6 @@
+kubectl get ns apps || kubectl apply -f - <<'YAML'
 apiVersion: v1
 kind: Namespace
 metadata:
   name: apps
-
+YAML
