@@ -32,7 +32,7 @@ pipeline {
 		stage('Deploy') {
             steps {
                 echo 'Deploy to tomcat ap/n server '
-				deploy adapters: [tomcat9(credentialsId: 'tomcat', path: '', url: 'http://3.83.227.87:8081/')], contextPath: 'facebook', war: '**/*.war'
+				deploy adapters: [tomcat9(credentialsId: 'tomcat', path: '', url: 'http://52.55.130.195:8081/')], contextPath: 'facebook', war: '**/*.war'
             }
         }
     }
