@@ -13,12 +13,13 @@ spec:
       labels:
         app: webapp
     spec:
-      # Schedule on your app nodegroup (labeled role=app)
+      # Schedule onto the app nodegroup
       nodeSelector:
-        role: app
+        eks.amazonaws.com/nodegroup: app-large
       containers:
         - name: webapp
           image: preethavanjothi21/cicd-webapp:18
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
