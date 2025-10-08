@@ -15,7 +15,7 @@
 <body>
   <div class="wrap">
     <h1>Hi, This is Preetha Vanajothi</h1>
-    <p>This domain is used to execute my Disaster Recovery CI/CD project.</p>
+    <p>This domain is used to execute my  CI/CD project.</p>
     <div class="tag">Deployed via Jenkins → Docker → Kubernetes</div>
   </div>
 </body>
