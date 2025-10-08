@@ -1,3 +1,5 @@
+# if you don’t have the file locally, create it exactly as below:
+cat <<'YAML' > svc-webapp-apps.yaml
 apiVersion: v1
 kind: Service
 metadata:
@@ -11,3 +13,7 @@ spec:
     - name: http
       port: 80
       targetPort: http
+YAML
+
+kubectl apply -f svc-webapp-apps.yaml
+kubectl -n apps get svc webapp
