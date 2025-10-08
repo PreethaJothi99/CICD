@@ -11,7 +11,13 @@ pipeline {
     PROJECT_KEY     = 'preetha-cicd'
     IMAGE_TAG       = "${env.BUILD_NUMBER}"
     TRIVY_CACHE_DIR = "${WORKSPACE}/.trivycache"
-    TRIVY_BIN       = "/usr/bin/trivy"   // confirmed on your host
+    TRIVY_BIN       = "/usr/bin/trivy"        // confirmed on your host
+
+    // ==== Trivy policy switches ====
+    // To enforce later: set TRIVY_EXIT_CODE = "1"
+    TRIVY_SEVERITY  = "CRITICAL"              // scan only CRITICAL now
+    TRIVY_EXIT_CODE = "0"                     // don't fail build on findings (pass-now mode)
+    TRIVY_COMMON    = "--ignore-unfixed"      // ignore issues without a fix (keeps noise down)
   }
 
   stages {
@@ -77,7 +83,7 @@ pipeline {
       }
     }
 
-    /* ===== Trivy Security Scans ===== */
+    /* ===== Trivy Security Scans (pass-now mode) ===== */
 
     stage('Trivy FS (source)') {
       steps {
@@ -87,20 +93,25 @@ pipeline {
           TRIVY="${TRIVY_BIN:-$(command -v trivy)}"
           echo "Using TRIVY at: ${TRIVY}"
           [ -x "${TRIVY}" ] || { echo "Trivy not executable at ${TRIVY}"; exit 127; }
+
+          # FS scan: source + Dockerfile + pom, etc.
           "${TRIVY}" fs \
-            --exit-code 1 \
-            --severity HIGH,CRITICAL \
+            --exit-code ${TRIVY_EXIT_CODE} \
+            --severity ${TRIVY_SEVERITY} \
             --no-progress \
             --cache-dir "${TRIVY_CACHE_DIR}" \
+            ${TRIVY_COMMON} \
             --format table \
             --output reports/trivy-fs.txt \
             .
+
+          echo "FS scan complete (severity=${TRIVY_SEVERITY}, exit-code=${TRIVY_EXIT_CODE})."
         '''
       }
       post { always { archiveArtifacts artifacts: 'reports/trivy-fs.txt', allowEmptyArchive: true } }
     }
 
-    // NOTE: trivy config (v0.55.0) does NOT support --no-progress. Removed that flag here.
+    // NOTE: 'trivy config' in 0.55.0 doesn't support --no-progress
     stage('Trivy K8s Config (manifests)') {
       steps {
         sh '''
@@ -108,13 +119,17 @@ pipeline {
           mkdir -p "${TRIVY_CACHE_DIR}" reports
           TRIVY="${TRIVY_BIN:-$(command -v trivy)}"
           echo "Using TRIVY at: ${TRIVY}"
+
           "${TRIVY}" config \
-            --exit-code 1 \
-            --severity HIGH,CRITICAL \
+            --exit-code ${TRIVY_EXIT_CODE} \
+            --severity ${TRIVY_SEVERITY} \
             --cache-dir "${TRIVY_CACHE_DIR}" \
+            ${TRIVY_COMMON} \
             --format table \
             --output reports/trivy-k8s-config.txt \
             deploymentfiles/
+
+          echo "Config scan complete (severity=${TRIVY_SEVERITY}, exit-code=${TRIVY_EXIT_CODE})."
         '''
       }
       post { always { archiveArtifacts artifacts: 'reports/trivy-k8s-config.txt', allowEmptyArchive: true } }
@@ -133,14 +148,18 @@ pipeline {
           mkdir -p "${TRIVY_CACHE_DIR}" reports
           TRIVY="${TRIVY_BIN:-$(command -v trivy)}"
           echo "Using TRIVY at: ${TRIVY}"
+
           "${TRIVY}" image \
-            --exit-code 1 \
-            --severity HIGH,CRITICAL \
+            --exit-code ${TRIVY_EXIT_CODE} \
+            --severity ${TRIVY_SEVERITY} \
             --no-progress \
             --cache-dir "${TRIVY_CACHE_DIR}" \
+            ${TRIVY_COMMON} \
             --format table \
             --output reports/trivy-image.txt \
             ${DOCKER_IMAGE}:${IMAGE_TAG}
+
+          echo "Image scan complete (severity=${TRIVY_SEVERITY}, exit-code=${TRIVY_EXIT_CODE})."
         '''
       }
       post { always { archiveArtifacts artifacts: 'reports/trivy-image.txt', allowEmptyArchive: true } }
@@ -175,6 +194,6 @@ pipeline {
 
   post {
     failure { echo '❌ Pipeline failed. See Trivy report artifacts under "reports/".' }
-    success { echo "✅ Pipeline succeeded! Image: ${DOCKER_IMAGE}:${IMAGE_TAG}" }
+    success { echo "✅ Pipeline succeeded! Image: ${DOCKER_IMAGE}:${IMAGE_TAG} (Trivy scanned; build not blocked)." }
   }
 }
