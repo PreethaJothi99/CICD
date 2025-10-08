@@ -4,7 +4,6 @@ pipeline {
   triggers { githubPush() }
 
   environment {
-    // Ensure Jenkins uses system binaries (not Snap)
     PATH            = "/usr/bin:/usr/local/bin:/usr/share/maven/bin:${PATH}"
     GIT_REPO        = 'https://github.com/PreethaJothi99/CICD.git'
     SONAR_HOST      = 'http://52.55.130.195:9000'
@@ -12,8 +11,8 @@ pipeline {
     PROJECT_KEY     = 'preetha-cicd'
     IMAGE_TAG       = "${env.BUILD_NUMBER}"
     TRIVY_CACHE_DIR = "${WORKSPACE}/.trivycache"
-    // Set this to the absolute path of your non-snap Trivy binary
-    TRIVY_BIN       = "/usr/local/bin/trivy"
+    // On your server, trivy is at /usr/bin/trivy (confirmed)
+    TRIVY_BIN       = "/usr/bin/trivy"
   }
 
   stages {
@@ -79,13 +78,17 @@ pipeline {
       }
     }
 
-    /* ===== Trivy security gates ===== */
+    /* ===== Trivy Security Scans ===== */
 
     stage('Trivy FS (source)') {
       steps {
         sh '''
+          set -e
           mkdir -p "${TRIVY_CACHE_DIR}" reports
-          "${TRIVY_BIN}" fs \
+          TRIVY="${TRIVY_BIN:-$(command -v trivy)}"
+          echo "Using TRIVY at: ${TRIVY}"
+          [ -x "${TRIVY}" ] || { echo "Trivy not executable at ${TRIVY}"; exit 127; }
+          "${TRIVY}" fs \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
@@ -101,8 +104,11 @@ pipeline {
     stage('Trivy K8s Config (manifests)') {
       steps {
         sh '''
+          set -e
           mkdir -p "${TRIVY_CACHE_DIR}" reports
-          "${TRIVY_BIN}" config \
+          TRIVY="${TRIVY_BIN:-$(command -v trivy)}"
+          echo "Using TRIVY at: ${TRIVY}"
+          "${TRIVY}" config \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
@@ -124,8 +130,11 @@ pipeline {
     stage('Trivy Image (container)') {
       steps {
         sh '''
+          set -e
           mkdir -p "${TRIVY_CACHE_DIR}" reports
-          "${TRIVY_BIN}" image \
+          TRIVY="${TRIVY_BIN:-$(command -v trivy)}"
+          echo "Using TRIVY at: ${TRIVY}"
+          "${TRIVY}" image \
             --exit-code 1 \
             --severity HIGH,CRITICAL \
             --no-progress \
@@ -166,7 +175,7 @@ pipeline {
   } // stages
 
   post {
-    failure { echo 'Pipeline failed. See Trivy report artifacts under "reports/".' }
-    success { echo "Pipeline OK. Image: ${DOCKER_IMAGE}:${IMAGE_TAG}" }
+    failure { echo '❌ Pipeline failed. Check the Trivy reports under "reports/".' }
+    success { echo "✅ Pipeline succeeded! Image: ${DOCKER_IMAGE}:${IMAGE_TAG}" }
   }
 }
