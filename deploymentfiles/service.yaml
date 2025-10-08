@@ -1,15 +1,13 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: mc-app-service
-  labels:
-    app: mc-app
+  name: webapp
+  namespace: apps
 spec:
   type: LoadBalancer
   selector:
-    app: mc-app
+    app: webapp
   ports:
     - name: http
       port: 80
-      targetPort: 8080
-      protocol: TCP
+      targetPort: http
