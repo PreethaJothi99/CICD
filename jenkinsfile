@@ -196,7 +196,7 @@ pipeline {
   } // stages
 
   post {
-    failure { echo '❌ Pipeline failed. See archived Trivy reports in "reports/".' }
-    success { echo "✅ Pipeline succeeded! Image: ${DOCKER_IMAGE}:${IMAGE_TAG} (Trivy scanned; build not blocked)." }
+    failure { echo ' Pipeline failed. See archived Trivy reports in "reports/".' }
+    success { echo " Pipeline succeeded! Image: ${DOCKER_IMAGE}:${IMAGE_TAG} (Trivy scanned; build not blocked)." }
   }
 }
